@@ -22,7 +22,7 @@ visualize the resulting MSTs. This approach is useful because finding a good clu
 
 ## Installation
 
-The easiest way to install Totem is to use devtools R package. We are currently working on to publish the package on Bioconductor.
+The easiest way to install Totem is to use devtools R package. We are currently working to publish the package on Bioconductor.
 
 ```R
 devtools::install_github("elolab/Totem")
