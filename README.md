@@ -34,7 +34,7 @@ The HTML version of the R package vignette can be accessed   [here](https://html
 
 
 
-## Citation
+## References
 
 [1] Johannes Smolander. Sini Junttila. Laura L. Elo. Totem: A user-friendly tool for inferring tree-shaped trajectories from single-cell data. Submitted to *bioRxiv*. 
 
