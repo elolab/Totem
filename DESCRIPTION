@@ -1,0 +1,40 @@
+Package: Totem
+Type: Package
+Title: A user-friendly tool for inferring tree-shaped 
+  trajectories from single-cell data
+Version: 0.99.0
+Description: Totem is a tool designed to facilitate the inference of 
+  tree-shaped trajectories from single-cell RNA-seq data. The key idea is 
+  to generate 
+  a large number of clustering results, rank them, and examine the resulting 
+  top-ranked clustering results. The probability of finding an optimal clustering 
+  increases when different clusterings are considered. Totem uses the 
+  Slingshot method to smoothen the lineages of the trajectory network.
+  In addition, the cell connectivity measure derived from the cluster 
+  connectivity of Minimum Spanning Trees (MSTs) of the clustering results 
+  can be used to aid the trajectory optimization.
+Authors@R: c(person("Johannes", "Smolander",
+             email = "johannes.smolander@gmail.com",
+             role=c("cre", "aut")),
+             person("Sini", "Junttila",
+             role=c("aut")),
+             person("Laura L", "Elo",
+             role=c("aut")))
+License: GPL-3
+Imports: Matrix, plyr, dplyr, SingleCellExperiment,
+        SummarizedExperiment, S4Vectors, methods, stats, utils, ape, aricode,
+        cluster, cowplot, dyndimred, dynplot, dynwrap, fpc, ggplot2, princurve,
+        purrr, slingshot, tibble
+Depends: R(>= 4.2.0)
+LazyData: FALSE
+RoxygenNote: 7.2.1
+Encoding: UTF-8
+Suggests: knitr, rmarkdown, BiocStyle,DelayedMatrixStats
+VignetteBuilder: knitr
+URL: https://github.com/elolab/Totem
+BugReports: https://github.com/elolab/Totem
+Packaged: 2022-05-09 12:10:00 UTC; pajosm
+biocViews: SingleCell, Software, Clustering, 
+            RNASeq, Visualization, Transcriptomics, 
+            DataRepresentation, Transcription,
+            GeneExpression

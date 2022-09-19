@@ -1,0 +1,12 @@
+note <- sprintf("R package version %s", meta$Version)
+
+bibentry(bibtype = "Article",
+         title = " A user-friendly tool for inferring tree-shaped 
+  trajectories from single-cell data",
+         author = c(person("Johannes", "Smolander"),
+                    person("Sini", "Junttila"),
+                    person("Laura L", "Elo")),
+         year = 2022,
+         journal = "bioRxiv",
+         note = note,
+         url = "https://github.com/elolab/iloreg")

@@ -1,0 +1,564 @@
+---
+title: "Totem package manual"
+author: "Johannes Smolander"
+date: "`r Sys.Date()`"
+output: 
+  BiocStyle::html_document:
+    toc: true
+vignette: >
+  %\VignetteIndexEntry{Totem package manual}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding[utf8]{inputenc}
+---
+  
+<style>
+body {
+text-align: justify}
+</style>
+  
+```{r knitr-options, echo=FALSE, message=FALSE, warning=FALSE}
+library(knitr)
+opts_chunk$set(fig.align = 'center', fig.width = 6, fig.height = 5)
+```
+
+
+# Introduction
+
+`Totem` package is a tool designed to facilitate the inference of tree-shaped 
+trajectories from single-cell
+data [1]. These include linear, bifurcating, multifurcating, and other 
+tree-shaped trajectories ([a helpful illustration](https://academic.oup.com/view-large/figure/205480453/btaa463f2.tif)).
+
+In trajectory inference methods like `Slingshot`[2] that require a clustering 
+to construct the Minimum Spanning Tree (`MST`) as the backbone of the 
+trajectory, much of the success of the trajectory inference depends on 
+finding a good clustering that produces a biologically meaningful trajectory 
+with the correct milestone connections. The MST construction is determined
+by the cluster distances of which generation is sensitive to the cluster 
+structure, the pre-processing steps (dimensionality reduction), and how the 
+distances are calculated.
+
+`Totem` generates a large number of clustering results with a *k*-medoids 
+algorithm (CLARA) and
+constructs an MST for each clustering. `Totem` estimates `the connectivity` 
+of the cells (`cell connectivity`)
+from the MSTs, which measures how many connections the cells have on average 
+to
+other clusters in the MSTs. The cell connectivity allows users to visually 
+see which parts of the embedding are likely to be end points (leaves) and 
+branch points of the trajectory, and the user can leverage the cell 
+connectivity to optimize the trajectory.
+`Totem` uses the `Calinski-Harabasz score` and the cell connectivity to rank 
+the clustering results.
+
+From the ranked clusterings the user can select one or several clusterings 
+and easily
+visualize the resulting MSTs. This approach is useful because finding a good 
+clustering automatically that will also generate a sensible MST is often 
+difficult, requiring the user to try different tools and parameters. The user 
+can also provide `a prior clustering` to direct the search towards 
+clusterings that are more similar with the prior clustering. `Totem` 
+generates the pseudotime and finds a directed trajectory of the MST using 
+`Slingshot` and can export the trajectory as R objects that are compatible 
+with downstream analysis tools.
+
+
+
+# Installation
+
+`Totem` can be downloaded from Bioconductor and installed by executing the 
+following command.
+
+
+```{r eval = FALSE}
+if(!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+BiocManager::install("Totem")
+```
+
+
+# Example: Simulated dataset
+
+In the following, we demonstate `Totem` using a simulated dataset 
+(`binary_tree_1`) [3].
+The dataset has a non-linear, tree-shaped trajectory with several 
+branching points. 
+
+
+## Setup a SingleCellExperiment object and prepare it for Totem analysis
+
+We create a `SingleCellExperiment` object and prepare it for `Totem` analysis. 
+At this point, it's better to provide the full gene expression matrix and give 
+the vector of highly variable genes later 
+(`3.3.1 Performing dimensionality reduction`). This way all of the features 
+can be visualized.
+
+
+```{r}
+set.seed(1234)
+
+suppressMessages(library(Totem))
+suppressMessages(library(SingleCellExperiment))
+suppressMessages(library(cowplot))
+suppressMessages(library(dyndimred))
+suppressMessages(library(S4Vectors))
+
+data(binary_tree_1)
+
+# The dataset was normalized using the 
+# LogNormalize method from the Seurat R package.
+sce <- SingleCellExperiment(assays = list(counts = t(binary_tree_1$raw_data),
+                                          logcounts = t(binary_tree_1$normalized_data)))
+sce <- PrepareTotem(sce)
+```
+
+## Run Totem steps separately
+
+### Performing dimensionality reduction
+
+The `binary_tree_1` dataset consists of 1128 genes and 929 cells. 
+Here, we use the landmark
+Multi-Dimensional Scaling (LMDS) from `dyndimred` package [4] to generate a 
+low-dimensional embedding with 5 dimensions. LMDS is faster than MDS for 
+large datasets. 
+
+For expression matrices with tens of thousands of features, it's highly 
+recommended to perform feature selection beforehand (e.g., with `Seurat`). 
+When initializing the `SingleCellExperiment` object, it's recommended to 
+use the whole gene expression matrix and provide the selected feature names 
+for the `dim.red.features` parameter. Here we use all features and set 
+`dim.red.features=NULL` because the number of features is small.
+
+```{r}
+
+print(dim(sce))
+
+sce <- RunDimRed(object = sce,
+                 dim.red.method = "lmds",
+                 dim.red.features = NULL,
+                 dim.reduction.par.list = list(ndim=5))
+
+```
+
+If the user wants to use a custom embedding instead, this can be
+provided through the `reducedDim` function. 
+
+```{r}
+# extract the generated embedding and set it again into the same slot
+own_dim_red <- reducedDim(sce)
+reducedDim(sce,type = "lmds") <- own_dim_red # use any name
+
+```
+
+
+### Generating a two-dimensional embedding for visualization
+
+The 5-dimensional LMDS embedding cannot be used to visualize the data. 
+To visualize the data,
+we need a two-dimensional embedding (3-dimensional not supported at the moment).
+We use the `dyndimred` package to generate a two-dimensional MDS embedding. 
+Good alternative methods for visualization include t-SNE 
+(`dimred_tsne` functioon) and UMAP (`dimred_mds` function).
+
+```{r}
+
+dim_red <- dimred_mds(binary_tree_1$normalized_data,ndim=2)
+
+```
+
+### Clustering
+
+After dimensionality reduction, the next step is to perform clustering that 
+involves running
+the k-medoids (CLARA) algorithm a large number of times (default 10k). 
+The idea is to generate clusterings that are dissimilar and later select 
+clusterings to use as the basis for `Slingshot` to generate 
+directed, tree-shaped trajectories.
+
+The user needs to specify the range of the *k* values (default `3:20`), 
+the minimum number of cells per cluster (default `5`), and the initial total 
+number
+of clusterings (default `10000`). The second parameter (`min.cluster.size`) 
+determines the clusterings that are
+filtered out because they include too small clusters. The filtering step is 
+also important because
+the Slingshot distance method can encounter errors if the number of features 
+in the dimensionally
+reduced data exceeds the minimum cluster size.
+
+```{r}
+
+sce <- RunClustering(sce,
+                         k.range = 3:20,
+                         min.cluster.size = 5,
+                         N.clusterings=10000)
+
+```
+
+
+### Visualizing cell connectivity
+
+The cell connectivity is calculated by averaging the connectivity vectors of 
+all the clusterings
+and MSTs. Each individual connectivity vector is calculated by counting how 
+many connections each
+cluster has in an MST with the other clusters divided by 
+the number of clusters.
+
+The example below visualizes the cell connectivity for the `binary_tree_1` 
+dataset. The local changes in the connectivity indicate milestone transitions 
+that are relevant to model. The visualization helps the user to find an 
+optimal topology. Cell populations that have a low level of connectivity
+are likely to be leaf/end nodes of the tree, and the cell populations that 
+have a high connectivity are likely to be at the branching points of the 
+trajectory. This can also be useful for locating milestones that are not 
+distinguishable in the visualization but are distinct in the embedding that 
+is used as input in the clustering step.
+
+```{r}
+
+VizCellConnectivity(sce,viz.dim.red = dim_red)
+
+```
+
+### Clustering selection
+
+After clustering we need to select one or several clusterings that are used to 
+construct the Minimum Spanning Trees (MSTs) with Slingshot. The selection method
+can be chosen from five options:
+
+- `selection.method=1`: Uses the Calinski-Harabasz score with the cell 
+connectivity as input.
+This criterion typically performs well with non-linear trajectories with 
+many milestones.
+- `selection.method=2`: Uses the Calinski-Harabasz score with the 
+dimensionally reduced data as input.
+This criterion typically performs well with linear trajectories with 
+few milestones.
+- `selection.method=3`: The arithmetic mean of `2` and `3`.
+- `selection.method=4`: If the user has a prior clustering, they can 
+provide 
+it in the `prior.clustering` argument. The criterion `4` is the arithmetic 
+mean
+of `1` and the adjusted Rand index (ARI) between a clustering and the 
+prior clustering.
+This helps to select clusterings that are more similar with the prior 
+clustering.
+- `selection.method=5`: If the user has a prior clustering, they can 
+provide 
+it in the `prior.clustering` argument. The criterion `5` is the 
+arithmetic mean
+of `2` and the adjusted Rand index (ARI) between a clustering and the 
+prior clustering.
+This helps to select clusterings that are more similar with the prior 
+clustering.
+
+In addition, the user can set `selection.stratified=TRUE` if the number of 
+clusters in the selected clusterings to vary evenly. This generates more 
+versatile
+clusterings.
+
+The number of selected clusters is controlled by the `selection.N.models` 
+parameter. If the value is an integer, the function picks a set of top 
+clusterings matching to this number. If the value is 
+a vector of integers, this selects a set of clusterings of which position in 
+the ranked
+list corresponds to the integers (e.g., 2:4 would select the clusterings 
+ranked 2,3, and 4).
+
+It should be noted that even though the set of clustering results is large and 
+includes highly versatile clustering results, it is possible that the 
+algorithm cannot find a clustering that consistent with the cell connectivity. 
+This can happen especially when some cell types are extremely prevalent and 
+some are extremely rare. In this case, the user should increase the upper 
+limit of the number of clusters in `RunClustering` and use `MergeClusters` to 
+merge the subpopulations of the large cell types.
+
+```{r}
+
+sce <- SelectClusterings(sce,selection.method = 1,
+                       selection.N.models = 10,
+                       selection.stratified=FALSE,
+                       prior.clustering = NULL)
+
+```
+
+
+
+### Visualizing the selected clusterings and their MSTs
+
+We visualize the the selected clusterings and their MSTs using `VizMST` 
+function.
+To construct the MST, `Totem` uses the Slingshot distance metric 
+based on a Mahalanobis-like metric that
+takes into account the distance, spread, and shape of the clusters.
+
+```{r, fig.height=12, fig.width=12, out.width = '100%',fig.align = "center"}
+
+ReturnTrajNames(sce)
+
+VizMST(sce,clustering.names = ReturnTrajNames(sce),viz.dim.red = dim_red)
+
+```
+
+We can print the MST network with `ReturnMSTNetwork` function.
+
+```{r}
+
+ReturnMSTNetwork(sce,clustering.name = "13.127")
+
+```
+
+### Perform Slingshot smoothing for selected clusterings
+
+We perform the Slingshot smoothing to generate the pseudotime and a directed 
+trajectory for
+the selected clusterings. 
+The MSTs will be the same that were visualized
+previously, unless the user changes the distance method through 
+`slingshot.par.list` parameter. The starting (root) clusters will be selected 
+randomly, but they can be changed
+using `ChangeTrajRoot` function for each trajectory individually (see below). 
+
+```{r}
+
+sce <- RunSmoothing(sce)
+
+```
+
+We visualize the smoothed trajectories with `VizSmoothedTraj` function.
+These can be only trajectories that have been smoothed with `RunSmoothing` 
+function.
+
+```{r, fig.height=12, fig.width=12, out.width = '100%',fig.align = "center"}
+
+ReturnTrajNames(sce)
+
+VizSmoothedTraj(sce,
+                traj.names = ReturnTrajNames(sce),
+                viz.dim.red = dim_red,plot.pseudotime = FALSE)
+
+```
+
+We can print the milestone network of a trajectory by 
+`ReturnSmoothedTrajNetwork` function.
+
+```{r}
+
+ReturnSmoothedTrajNetwork(sce,clustering.name = "13.127")
+
+```
+### Changing the root cluster
+
+At this point, we can decide that we think the trajectory `13.127` 
+feels optimal
+and want to take it for further analysis. 
+
+The current root node is `3`, and we can use `ChangeTrajRoot` function 
+to change it to e.g. `12`. Currently, the function re-runs the 
+Slingshot smoothing and
+might take long with large datasets.
+
+```{r}
+sce <- ChangeTrajRoot(sce,traj.name="13.127",root.cluster=12)
+```
+
+Visualize the root-adjusted trajectory.
+
+```{r, fig.height=4, fig.width=4, out.width = '100%',fig.align = "center"}
+
+
+VizSmoothedTraj(sce,
+                traj.names = "13.127",
+                viz.dim.red = dim_red,plot.pseudotime = FALSE)
+
+VizSmoothedTraj(sce,
+                traj.names = "13.127",
+                viz.dim.red = dim_red,plot.pseudotime = TRUE)
+
+
+```
+
+Print its milestone network.
+
+```{r}
+
+ReturnSmoothedTrajNetwork(sce,clustering.name = "13.127")
+
+```
+
+
+### Merging clusters
+
+Sometimes it can be useful to merge clusters. The k-medoids clustering 
+algorithm can't always generate proper-sized clusters when some cell types 
+are rare 
+and some are highly prevalent in the data. In cases like this, it's better to 
+increase the upper limit of the number of clusters in `RunClustering` 
+and merge the sub-clusters of large cell types manually. Note that this 
+function
+overwrites the original clustering.
+
+```{r}
+sce <- MergeClusters(sce,clustering.name="13.127",
+                     merged.clusters = c(11,3),
+                     merged.name = 3)
+```
+
+Visualize the MST.
+
+```{r}
+VizMST(sce,clustering.names = "13.127",viz.dim.red = dim_red)
+```
+
+
+
+
+### Visualizing gene expression
+
+`VizFeatureExpression` function can be used to visualize expression of one 
+or several features.
+`traj.name` parameter can be left empty.
+
+```{r, fig.height=4, fig.width=4, out.width = '100%',fig.align = "center"}
+
+VizFeatureExpression(sce,traj.name = "13.127",
+                     feature.names = "G112",
+                     viz.dim.red = dim_red,
+                     plot.traj = TRUE)
+
+```
+
+### Visualizing a user-provided clustering
+
+`VizClustering` function can be used if the user wants to visualize 
+a custom clustering or some other character vector
+over the two-dimensional visualization.
+By default, the function also creates an MST based on the \code{Slingshot} 
+distance method and visualizes it. 
+
+```{r, fig.height=4, fig.width=4, out.width = '100%',fig.align = "center"}
+
+VizClustering(sce,clustering = binary_tree_1$clustering,viz.dim.red = dim_red)
+
+```
+
+
+### Return dynwrap and Slingshot objects for further downstream analysis
+
+We can return a `dynwrap` object of a trajectory with `ReturnDynwrapObject` 
+function or a 
+`PseudotimeOrdering` object with `ReturnSlingshotObject`.
+The objects can then be used downstream for example to perform differential 
+expression analysis
+using tools like [dyno](https://dynverse.org/dyno/) or 
+[tradeSeq](https://www.bioconductor.org/packages/release/bioc/html/tradeSeq.html).
+
+
+```{r}
+
+dynwrap_object <- ReturnDynwrapObject(sce,traj.name="13.127")
+slingshot_object <- ReturnSlingshotObject(sce,traj.name="13.127")
+
+
+```
+
+## Limitations
+
+`Totem` has the same limitations with respect to trajectory complexity as 
+the `Slingshot` trajectory inference method 
+and the `dynverse` trajectory framework that `Totem` uses.
+
+Currently, it is not possible to sensibly create *converging* trajectories, 
+where the cells 
+converge to a single point from multiple root clusters. This is because 
+`dynplot` will not generate the correct pseudotime for 
+multi-root trajectories. However, if the user wants to only visualize a 
+converging trajectory without the correct pseudotime, it is possible to 
+hand-edit the milestone network 
+of the `dynwrap` object and flip the direction of each milestone pair.
+
+```{r}
+
+  milestone_network <- dynwrap_object$milestone_network
+  from_ <- milestone_network$from
+  to_ <- milestone_network$to
+  milestone_network$from <- to_
+  milestone_network$to <- from_
+  dynwrap_object$milestone_network <- milestone_network
+  
+  metadata(sce)$totem$dynwrap_trajectory[["13.127"]] <- dynwrap_object
+
+
+```
+
+
+```{r, fig.height=4, fig.width=4, out.width = '100%',fig.align = "center"}
+
+
+VizSmoothedTraj(sce,
+                traj.names = "13.127",
+                viz.dim.red = dim_red,plot.pseudotime = FALSE)
+
+VizSmoothedTraj(sce,
+                traj.names = "13.127",
+                viz.dim.red = dim_red,plot.pseudotime = TRUE)
+
+
+```
+
+
+Similarly, it is possible to visualize trajectories that have both *diverging*
+and *converging* parts, diverging meaning that the cells diverge 
+from a single point. As previously, the milestone network needs to be 
+hand-edited and  saved back to the `SingleCellExperiment` object.
+
+In addition, `Totem` cannot generate disconnected trajectories 
+or trajectories that have cycles.
+
+## Tips
+
+* If the objective is to generate a trajectory that is in line with a 
+visualization, such as UMAP or t-SNE, then the easiest way to obtain 
+accurate trajectories is to use the embedding of the visualization as 
+the input data in the clustering. See the earlier 
+part `Performing dimensionality reduction` for how to set a custom matrix 
+as the input data.
+* If using UMAP or t-SNE, the parameters affect how the visualization will 
+look like. For example, the parameters of the UMAP function in the `dyndimred` 
+R package will create a more compact visualization compared to Seurat, although 
+both use the UWOT R package to perform UMAP. 
+* Sometimes the k-medoids algorithm may not work well with PCA
+if the number principal components is high (e.g. 30) because the generated 
+clustering results contain many small clusters (1 or 2 cells). If that happens, 
+it's better to use LMDS, UMAP, or other dimensionality reduction method.
+* If the dataset includes extremely rare cell types and extremely prevalent 
+cell types at the same time, the k-medoids might not work properly. The result 
+can contain many subpopulations for the large cell types, in which case the 
+`MergeClusters` function can be used to merge the subpopulations.
+
+## Session info
+
+```{r, eval = TRUE}
+sessionInfo()
+```
+
+
+
+# References 
+
+1. Johannes Smolander, Sini Junttila, Laura L Elo, Totem: a user-friendly tool 
+for clustering-based inference of tree-shaped trajectories from single-cell 
+data. bioRxiv.
+2. Street, K., Risso, D., Fletcher, R. et al. Slingshot: cell lineage and 
+pseudotime inference for single-cell transcriptomics. BMC Genomics 19, 477 (2018). [https://doi.org/10.1186/s12864-018-4772-0](https://doi.org/10.1186/s12864-018-4772-0)
+3. Robrecht Cannoodt, Wouter Saelens, Helena Todorov, & Yvan Saeys. (2018). 
+Single-cell -omics datasets containing a trajectory (2.0.0) [Data set]. Zenodo. [https://doi.org/10.5281/zenodo.1443566](https://doi.org/10.5281/zenodo.1443566)
+4. Saelens, W., Cannoodt, R., Todorov, H. et al. A comparison of single-cell 
+trajectory inference methods. Nat Biotechnol 37, 547-554 (2019). [https://doi.org/10.1038/s41587-019-0071-9](https://doi.org/10.1038/s41587-019-0071-9)
+
+# Contact information
+
+If you have questions related to `Totem`, 
+please contact us [here](https://github.com/elolab/Totem).
+
