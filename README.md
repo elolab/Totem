@@ -28,6 +28,11 @@ The easiest way to install Totem is to use devtools R package. We are currently 
 devtools::install_github("elolab/Totem")
 ```
 
+## Manual
+
+The HTML version of the R package vignette can be accessed   [here](https://htmlpreview.github.io/?https://github.com/elolab/Totem-benchmarking/blob/main/Totem.html).
+
+
 
 ## Citation
 
