@@ -286,7 +286,7 @@ RunDimRed.SingleCellExperiment <- function(object,dim.red.method,
   if (!is.null(dim.red.features)) {
     message("using features in the 'dim.red.features' argument")
     
-    X <- X[dim.red.features,]
+    X <- X[,dim.red.features]
   }
   
   message("using '",dim.red.method,"' as the dimensionality reduction method")
