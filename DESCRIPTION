@@ -2,7 +2,7 @@ Package: Totem
 Type: Package
 Title: A user-friendly tool for inferring tree-shaped 
   trajectories from single-cell data
-Version: 0.99.1
+Version: 0.99.2
 Description: Totem is a tool designed to facilitate the inference of 
   tree-shaped trajectories from single-cell RNA-seq data. The key idea is 
   to generate 
