@@ -24,7 +24,7 @@ The HTML version of the R package vignette can be accessed   [here](https://html
 
 ## References
 
-[1] Johannes Smolander. Sini Junttila. Laura L. Elo. Totem: A user-friendly tool for inferring tree-shaped trajectories from single-cell data. Submitted to *bioRxiv*. 
+[1] Johannes Smolander, Sini Junttila, Laura L Elo, Cell-connectivity-guided trajectory inference from single-cell data, Bioinformatics, Volume 39, Issue 9, September 2023, btad515, https://doi.org/10.1093/bioinformatics/btad515 
 
 [2] Street, K., Risso, D., Fletcher, R. et al. Slingshot: cell lineage and pseudotime inference for single-cell transcriptomics. BMC Genomics 19, 477 (2018). [https://doi.org/10.1186/s12864-018-4772-0](https://doi.org/10.1186/s12864-018-4772-0)
 
