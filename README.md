@@ -10,7 +10,7 @@ data [1]. These include linear, bifurcating, multifurcating, and other tree-shap
 
 ## Installation
 
-The easiest way to install Totem is to use `remotes` or `devtools` R packages. The `dynplot` and  `dynfeature` R packages are not available on CRAN, and it must be installed from GitHub.
+The easiest way to install Totem is to use either `remotes` or `devtools` R package with the `install_github` command. The `dynplot` and  `dynfeature` R packages are not available on CRAN, and they must be installed from GitHub.
 
 ```R
 remotes::install_github("dynverse/dynfeature")
