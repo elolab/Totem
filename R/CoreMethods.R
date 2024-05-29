@@ -770,7 +770,7 @@ setMethod("VizMST", signature(object = "SingleCellExperiment"),
 #' The MST of the clustering can also be visualized, which is generated
 #' using the Slingshot distance method.
 #' @param object an object of class \code{SingleCellExperiment}.
-#' @param clustering a vector that specifies the clustering.
+#' @param clustering a character vector that specifies the clustering.
 #' @param dim.red.type a character that denotes the name of the 
 #' dimensionality reduction method stored in the \code{SingleCellExperiment}
 #' object.

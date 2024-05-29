@@ -25,7 +25,7 @@ VizClustering.SingleCellExperiment(
 \arguments{
 \item{object}{an object of class \code{SingleCellExperiment}.}
 
-\item{clustering}{a vector that specifies the clustering.}
+\item{clustering}{a character vector that specifies the clustering.}
 
 \item{dim.red.type}{a character that denotes the name of the 
 dimensionality reduction method stored in the \code{SingleCellExperiment}
